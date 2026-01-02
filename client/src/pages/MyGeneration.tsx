@@ -20,9 +20,13 @@ const MyGeneration = () => {
 
   const fetchThumbnails = async () => {
     try {
-      const response = await fetch('/api/users/thumbnails', {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/users/thumbnails`,
+        {
+          credentials: 'include',
+        }
+      );
+
       const data = await response.json();
       if (response.ok) {
         setThumbnails(data.thumbnail || []);
