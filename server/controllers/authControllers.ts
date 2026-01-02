@@ -75,8 +75,8 @@ export const logoutUser = (req: Request, res: Response) => {
             console.error(err);
             return res.status(500).json({ message: 'Server error' });
         }
+        return res.json({ message: 'User logged out successfully' });
     })
-    return res.json({ message: 'User logged out successfully' });
 }
 
 //for verify user is logged in or not
