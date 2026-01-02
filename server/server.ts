@@ -27,7 +27,7 @@ app.use(cors({
     credentials: true,
 }))
 
-app.set('trust proxy', 1); 
+app.set('trust proxy', 1);
 
 app.use(session({
     secret: process.env.SESSION_SECRET as string,
@@ -56,8 +56,13 @@ app.get('/', (req: Request, res: Response) => {
     res.send('Server is Live!');
 });
 
-const port = process.env.PORT || 3000;
+// Export the app for Vercel
+export default app;
 
-app.listen(port, () => {
-    console.log(`Server is running at http://localhost:${port}`);
-});
+// For local development
+if (require.main === module) {
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+        console.log(`Server is running at http://localhost:${port}`);
+    });
+}
