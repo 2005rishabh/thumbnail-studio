@@ -176,7 +176,7 @@ const MyGeneration = () => {
                         <TrashIcon className="size-4" />
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDownlaod(thumb.image_url!); }}
+                        onClick={(e) => { e.stopPropagation(); handleDownload(thumb.image_url!); }}
                         className="p-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 transition-colors"
                         title="Download"
                       >
