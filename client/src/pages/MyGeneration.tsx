@@ -1,72 +1,84 @@
-import { use, useEffect, useState } from "react"
-import type { IThumbnail } from "../../public/assets/assets"
-import SoftBackdrop from "../components/SoftBackdrop"
-import { useNavigate } from "react-router-dom"
-import { ArrowUpRightIcon, DownloadIcon, TrashIcon } from "lucide-react"
-import toast from "react-hot-toast"
-import api from "../config/api"
+import { useEffect, useState } from "react";
+import type { IThumbnail } from "../../public/assets/assets";
+import SoftBackdrop from "../components/SoftBackdrop";
+import { useNavigate } from "react-router-dom";
+import { ArrowUpRightIcon, DownloadIcon, TrashIcon } from "lucide-react";
+import toast from "react-hot-toast";
+import api from "../config/api";
+
+const API_URL = import.meta.env.VITE_BASE_URL;
+
+if (!API_URL) {
+  throw new Error("VITE_BASE_URL is not defined in environment variables");
+}
 
 const MyGeneration = () => {
-  const [thumbnails, setThumbnails] = useState<IThumbnail[]>([])
-  const [loading, setLoading] = useState(false)
+  const [thumbnails, setThumbnails] = useState<IThumbnail[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
 
   const aspectRatioClassMap: Record<string, string> = {
-    '16:9': 'aspect-video',
-    '1:1': 'aspect-square',
-    '9:16': 'aspect-[9/16]',
-  }
+    "16:9": "aspect-video",
+    "1:1": "aspect-square",
+    "9:16": "aspect-[9/16]",
+  };
 
   const fetchThumbnails = async () => {
+    setLoading(true);
+
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/users/thumbnails`,
-        {
-          credentials: 'include',
-        }
+        `${API_URL}/api/users/thumbnails`,
+        { credentials: "include" }
       );
 
-      const data = await response.json();
-      if (response.ok) {
-        setThumbnails(data.thumbnail || []);
-      } else {
-        console.error('Failed to fetch thumbnails:', data.message);
-        setThumbnails([]);
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        throw new Error("API returned non-JSON response");
       }
-    } catch (error) {
-      console.error('Error fetching thumbnails:', error);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch thumbnails");
+      }
+
+      setThumbnails(data.thumbnail ?? []);
+    } catch (error: any) {
+      console.error("Error fetching thumbnails:", error);
       setThumbnails([]);
+      toast.error(error.message || "Failed to load thumbnails");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  const handleDownlaod = (image_url: string) => {
+  const handleDownload = (image_url: string) => {
     if (!image_url) return;
-    const link = document.createElement('a');
-    link.href = image_url.replace('/upload', '/upload/fl_attachment');
+    const link = document.createElement("a");
+    link.href = image_url.replace("/upload", "/upload/fl_attachment");
     document.body.appendChild(link);
     link.click();
     link.remove();
-  }
+  };
 
   const handleDelete = async (id: string) => {
     try {
-      const confirm = window.confirm('Are you sure you want to delete this thumbnail?')
-      if (!confirm) return;
-      const { data } = await api.delete(`/api/thumbnails/delete/${id}`)
-      toast.success(data.message)
-      setThumbnails(thumbnails.filter((t) => t._id !== id));
+      if (!window.confirm("Are you sure you want to delete this thumbnail?")) return;
+      const { data } = await api.delete(`/api/thumbnails/delete/${id}`);
+      toast.success(data.message);
+      setThumbnails((prev) => prev.filter((t) => t._id !== id));
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.response?.data?.message || error.message)
+      toast.error(error?.response?.data?.message || error.message);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchThumbnails()
-  }, [])
+    fetchThumbnails();
+  }, []);
+
 
   return (
     <>
