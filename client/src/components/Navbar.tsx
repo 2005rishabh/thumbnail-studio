@@ -66,7 +66,7 @@ export default function Navbar() {
                 }
                 <Link onClick={() => setIsOpen(false)} to="#" className="hover:text-pink-500 transition">My Contact</Link>
                 {
-                    isLoggedIn ? <button onClick={() => setIsOpen(false)}>Logout</button>
+                    isLoggedIn ? <button onClick={() => { logout(); setIsOpen(false); }}>Logout</button>
                         : <Link onClick={() => setIsOpen(false)} to="/login" className="hover:text-pink-500 transition">Login</Link>
                 }
                 <button onClick={() => setIsOpen(false)} className="active:ring-3 active:ring-white aspect-square size-10 p-1 items-center justify-center bg-pink-600 hover:bg-pink-700 transition text-white rounded-md flex">
