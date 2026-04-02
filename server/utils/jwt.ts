@@ -9,14 +9,17 @@ export const generateToken = (userId: string): string => {
     });
 };
 
-export const sendToken = (res: Response, userId: string, message: string) => {
+export const sendToken = (req: any, res: Response, userId: string, message: string) => {
     const token = generateToken(userId);
+
+    const origin = req.get('origin');
+    const isLocalhost = origin?.includes('localhost') || !origin;
 
     const cookieOptions = {
         expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
+        secure: !isLocalhost, // Secure only if not localhost
+        sameSite: (isLocalhost ? 'lax' : 'none') as 'none' | 'lax',
         path: '/',
     };
 
