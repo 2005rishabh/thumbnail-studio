@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import cookieParser from 'cookie-parser';
@@ -7,10 +7,18 @@ import AuthRouter from './routes/AuthRoutes';
 import ThumbnailRouter from './routes/ThumnailRoutes';
 import userRouter from './routes/UserRoutes';
 
-// Connect to Database
-connectDB();
-
 const app = express();
+
+// Middleware to ensure DB connection
+app.use(async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error("Database connection error:", error);
+        res.status(500).json({ message: "Internal Server Error: Database connection failed" });
+    }
+});
 
 const ALLOWED_ORIGINS = [
     'http://localhost:5173',
