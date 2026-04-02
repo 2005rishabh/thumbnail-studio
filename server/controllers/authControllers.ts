@@ -1,10 +1,20 @@
 import { Request, Response } from "express";
 import User from "../models/User";
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcrypt';
+import { sendToken } from "../utils/jwt";
+
+interface AuthRequest extends Request {
+    userId?: string;
+}
 
 export const registerUser = async (req: Request, res: Response) => {
     try {
         const { name, email, password } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: 'Please provide all fields' });
+        }
+
         const existingUser = await User.findOne({ email });
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
@@ -21,25 +31,32 @@ export const registerUser = async (req: Request, res: Response) => {
         });
 
         await newUser.save();
-        req.session.isLoggedIn = true;
-        req.session.userId = newUser._id;
-        return res.json({
+
+        sendToken(res, newUser._id, "User registered successfully");
+
+        return res.status(201).json({
+            success: true,
             message: "User registered successfully",
             user: {
-                id: newUser._id,
+                _id: newUser._id,
                 name: newUser.name,
                 email: newUser.email,
             }
-        })
+        });
     } catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: 'Server error' });
+        console.error("Register Error:", error);
+        return res.status(500).json({ message: 'Server error during registration' });
     }
 }
 
 export const loginUser = async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Please provide email and password' });
+        }
+
         const user = await User.findOne({ email });
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
@@ -50,59 +67,62 @@ export const loginUser = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        req.session.isLoggedIn = true;
-        req.session.userId = user._id;
+        sendToken(res, user._id, "User logged in successfully");
+
         return res.json({
+            success: true,
             message: "User logged in successfully",
             user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-            }
-        })
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: 'Server error' });
-    }
-}
-
-
-//for logout ((:->>
-
-export const logoutUser = (req: Request, res: Response) => {
-    req.session.destroy((err) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ message: 'Server error' });
-        }
-        return res.json({ message: 'User logged out successfully' });
-    })
-}
-
-//for verify user is logged in or not
-
-export const verifyUser = async (req: Request, res: Response) => {
-    try {
-        if (!req.session.isLoggedIn || !req.session.userId) {
-            return res.status(401).json({ message: 'Not authenticated' });
-        }
-
-        const user = await User.findById(req.session.userId).select('-password');
-        if (!user) {
-            return res.status(401).json({ message: 'Not authenticated' });
-        }
-
-        return res.json({
-            message: 'User is authenticated',
-            user: {
-                id: user._id,
+                _id: user._id,
                 name: user.name,
                 email: user.email,
             }
         });
+    } catch (error) {
+        console.error("Login Error:", error);
+        return res.status(500).json({ message: 'Server error during login' });
     }
-    catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: 'Server error' });
+}
+
+export const logoutUser = (req: Request, res: Response) => {
+    res.cookie('token', null, {
+        expires: new Date(Date.now()),
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
+        path: '/',
+    });
+
+    return res.json({
+        success: true,
+        message: 'User logged out successfully'
+    });
+}
+
+export const verifyUser = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.userId;
+
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Not authenticated' });
+        }
+
+        const user = await User.findById(userId).select('-password');
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'User not found' });
+        }
+
+        return res.json({
+            success: true,
+            message: 'User is authenticated',
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+            }
+        });
+    } catch (error) {
+        console.error("Verify Error:", error);
+        return res.status(500).json({ message: 'Server error during verification' });
     }
 }

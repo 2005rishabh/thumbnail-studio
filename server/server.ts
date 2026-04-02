@@ -1,52 +1,42 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import 'dotenv/config';
+import cookieParser from 'cookie-parser';
 import connectDB from './config/db';
-import session from 'express-session';
-import MongoStore from 'connect-mongo';
 import AuthRouter from './routes/AuthRoutes';
 import ThumbnailRouter from './routes/ThumnailRoutes';
 import userRouter from './routes/UserRoutes';
-
-
-declare module 'express-session' {
-    interface SessionData {
-        isLoggedIn: boolean;
-        userId: string;
-    }
-}
 
 // Connect to Database
 connectDB();
 
 const app = express();
 
+const ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://thumbnail-studio-two.vercel.app'
+];
+
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'https://thumbnail-studio-two.vercel.app'],
-    // methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
-}))
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+}));
 
 app.set('trust proxy', 1);
 
-app.use(session({
-    secret: process.env.SESSION_SECRET as string,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        maxAge: 1000 * 60 * 60 * 24 * 7,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        path: '/',
-    },
-    store: MongoStore.create({
-        mongoUrl: process.env.MONGODB_URI as string,
-        collectionName: 'sessions',
-    }),
-}));
-
 app.use(express.json());
+app.use(cookieParser());
 
 app.use('/api/auth', AuthRouter);
 app.use('/api/thumbnails', ThumbnailRouter);
@@ -54,6 +44,15 @@ app.use('/api/users', userRouter);
 
 app.get('/', (req: Request, res: Response) => {
     res.send('Server is Live!');
+});
+
+// Error handling middleware for CORS
+app.use((err: any, req: Request, res: Response, next: any) => {
+    if (err.message === 'Not allowed by CORS') {
+        res.status(403).json({ message: 'CORS policy: This origin is not allowed' });
+    } else {
+        next(err);
+    }
 });
 
 // Export the app for Vercel

@@ -3,6 +3,10 @@ import Thumbnail from '../models/Thumbnail';
 import ai from '../config/ai';
 import { v2 as cloudinary } from 'cloudinary';
 
+interface AuthRequest extends Request {
+    userId?: string;
+}
+
 const stylePrompts = {
     'Bold & Graphic': 'eye-catching thumbnail, bold typography, vibrant colors, expressive facial reaction, dramatic lighting, high contrast, click-worthy composition, professional style',
     'Tech/Futuristic': 'futuristic thumbnail, sleek modern design, digital UI elements, glowing accents, holographic effects, cyber-tech aesthetic, sharp lighting, high-tech atmosphere',
@@ -22,22 +26,23 @@ const colorSchemeDescriptions = {
     pastel: 'soft pastel colors, low saturation, gentle tones, calm and friendly aesthetic',
 }
 
-export const deleteThumbnail = async (req: Request, res: Response) => {
+export const deleteThumbnail = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.session;
+        const userId = req.userId;
 
         await Thumbnail.findByIdAndDelete({ _id: id, userId });
+        return res.json({ success: true, message: 'Thumbnail deleted successfully' });
 
     } catch (error) {
-        console.error('Error deleting thumbnail:', error); console.error('Error generating thumbnail:', error);
+        console.error('Error deleting thumbnail:', error);
         res.status(500).json({ message: 'Server Error' });
     }
 }
 
-export const generateThumbnail = async (req: Request, res: Response) => {
+export const generateThumbnail = async (req: AuthRequest, res: Response) => {
     try {
-        const { userId } = req.session;
+        const userId = req.userId;
         const { title, prompt: user_prompt, style, aspect_ratio, color_scheme } = req.body;
 
         // 1. USE THE TEXT-ONLY MODEL (This is 100% free and has high limits)
