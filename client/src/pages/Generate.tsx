@@ -29,6 +29,7 @@ const Generate = () => {
   const handleGenerate = async () => {
     if (!isLoggedIn) return toast.error('Please login to generate thumbnails');
     if (!title.trim()) return toast.error('Please enter a title or topic for the thumbnail');
+    if (loading) return; // prevent double-click
     setLoading(true);
 
     const api_payload = {
@@ -40,10 +41,16 @@ const Generate = () => {
       text_overlay: true,
     }
 
-    const { data } = await api.post('/api/thumbnails/generate', api_payload);
-    if (data.thumbnail) {
-      navigate("/generate/" + data.thumbnail._id);
-      toast.success(data.message || 'Thumbnail generated successfully');
+    try {
+      const { data } = await api.post('/api/thumbnails/generate', api_payload);
+      if (data.thumbnail) {
+        navigate("/generate/" + data.thumbnail._id);
+        toast.success(data.message || 'Thumbnail generated successfully');
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Generation failed, please try again');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -139,7 +146,11 @@ const Generate = () => {
 
                 {/* BUTTON */}
                 {!id && (
-                  <button onClick={handleGenerate} className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:cursor-not-allowed transition-colors">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={loading}
+                    className="text-[15px] w-full py-3.5 rounded-xl font-medium bg-linear-to-b from-pink-500 to-pink-600 hover:from-pink-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
                     {loading ? 'Generating...' : 'Generate Thumbnail'}
                   </button>
                 )}

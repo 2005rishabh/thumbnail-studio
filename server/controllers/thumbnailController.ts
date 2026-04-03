@@ -1,30 +1,53 @@
 import { Request, Response } from 'express';
 import Thumbnail from '../models/Thumbnail';
-import ai from '../config/ai';
 import { v2 as cloudinary } from 'cloudinary';
+import { buildOptimizedPrompt } from '../utils/promptBuilder';
 
 interface AuthRequest extends Request {
     userId?: string;
 }
 
-const stylePrompts = {
-    'Bold & Graphic': 'eye-catching thumbnail, bold typography, vibrant colors, expressive facial reaction, dramatic lighting, high contrast, click-worthy composition, professional style',
-    'Tech/Futuristic': 'futuristic thumbnail, sleek modern design, digital UI elements, glowing accents, holographic effects, cyber-tech aesthetic, sharp lighting, high-tech atmosphere',
-    'Minimalist': 'minimalist thumbnail, clean layout, simple shapes, limited color palette, plenty of negative space, modern flat design, clear focal point',
-    'Photorealistic': 'photorealistic thumbnail, ultra-realistic lighting, natural skin tones, candid moment, DSLR-style photography, lifestyle realism, shallow depth of field',
-    'Illustrated': 'illustrated thumbnail, custom digital illustration, stylized characters, bold outlines, vibrant colors, creative cartoon or vector art style',
+// --- Retry + Timeout helper ---
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(url: string, maxRetries = 3, timeoutMs = 8000): Promise<string> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+
+            if (!response.ok) {
+                throw new Error(`Pollinations returned ${response.status}`);
+            }
+
+            // Return the URL directly; Cloudinary handles the download
+            return url;
+
+        } catch (err: any) {
+            clearTimeout(timeout);
+            const isLastAttempt = attempt === maxRetries;
+            const isAbort = err.name === 'AbortError';
+
+            console.warn(`[Attempt ${attempt}/${maxRetries}] ${isAbort ? 'Timed out' : err.message}`);
+
+            if (isLastAttempt) {
+                throw new Error(`Image generation failed after ${maxRetries} attempts: ${err.message}`);
+            }
+
+            // Delay before next retry (1.5s)
+            await delay(1500);
+        }
+    }
+
+    // Should never reach here
+    throw new Error('Image generation failed');
 }
 
-const colorSchemeDescriptions = {
-    vibrant: 'vibrant and energetic colors, high saturation, bold contrasts, eye-catching palette',
-    sunset: 'warm sunset tones, orange pink and purple hues, soft gradients, cinematic glow',
-    forest: 'natural green tones, earthy colors, calm and organic palette, fresh atmosphere',
-    neon: 'neon glow effects, electric blues and pinks, cyberpunk lighting, high contrast glow',
-    purple: 'purple-dominant color palette, magenta and violet tones, modern and stylish mood',
-    monochrome: 'black and white color scheme, high contrast, dramatic lighting, timeless aesthetic',
-    ocean: 'cool blue and teal tones, aquatic color palette, fresh and clean atmosphere',
-    pastel: 'soft pastel colors, low saturation, gentle tones, calm and friendly aesthetic',
-}
+
+// --- Controllers ---
 
 export const deleteThumbnail = async (req: AuthRequest, res: Response) => {
     try {
@@ -45,39 +68,32 @@ export const generateThumbnail = async (req: AuthRequest, res: Response) => {
         const userId = req.userId;
         const { title, prompt: user_prompt, style, aspect_ratio, color_scheme } = req.body;
 
-        // 1. USE THE TEXT-ONLY MODEL (This is 100% free and has high limits)
-        const model = 'gemini-2.5-flash';
-
-        const promptForAI = `Act as a professional prompt engineer. Create a highly detailed
-        technical image generation prompt for a YouTube thumbnail.
-        Title: "${title}"
-        Style: ${style}
-        Colors: ${color_scheme}
-        Additional Details: ${user_prompt}
-        Output ONLY the improved prompt text, no headers or chat.`;
-
-        const result = await ai.models.generateContent({
-            model,
-            contents: [{ role: 'user', parts: [{ text: promptForAI }] }]
+        // 1. BUILD OPTIMIZED PROMPT (local, no API call)
+        const optimizedPrompt = buildOptimizedPrompt({
+            title,
+            style,
+            color_scheme,
+            user_prompt,
         });
 
-        const refinedPrompt = result.candidates?.[0]?.content?.parts?.[0]?.text || title;
+        console.log(`[Generate] Optimized prompt (${optimizedPrompt.length} chars): ${optimizedPrompt}`);
 
-        // 2. USE POLLINATIONS (100% Free, No API Key, No Billing needed)
+        // 2. BUILD POLLINATIONS URL
         const width = aspect_ratio === '16:9' ? 1280 : 1024;
         const height = aspect_ratio === '16:9' ? 720 : 1024;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(optimizedPrompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true&enhance=true`;
 
-        // This URL generates the image directly
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(refinedPrompt)}?width=${width}&height=${height}&seed=${Date.now()}&nologo=true`;
+        // 3. FETCH WITH RETRY + TIMEOUT
+        await fetchWithRetry(imageUrl, 3, 8000);
 
-        // 3. UPLOAD TO CLOUDINARY
-        // Cloudinary can upload directly from a URL, so you don't even need local FS logic
+        // 4. UPLOAD TO CLOUDINARY (downloads from Pollinations URL directly)
         const uploadResult = await cloudinary.uploader.upload(imageUrl, {
             folder: 'thumbnails',
-            resource_type: 'image'
+            resource_type: 'image',
+            timeout: 60000, // 60s for Cloudinary upload
         });
 
-        // 4. SAVE TO DATABASE
+        // 5. SAVE TO DATABASE
         const newThumbnail = new Thumbnail({
             userId,
             title,
@@ -86,13 +102,14 @@ export const generateThumbnail = async (req: AuthRequest, res: Response) => {
             color_scheme,
             image_url: uploadResult.secure_url,
             user_prompt,
-            prompt_used: refinedPrompt,
+            prompt_used: optimizedPrompt,
             isGenerating: false,
         });
 
         await newThumbnail.save();
 
         return res.json({
+            success: true,
             message: 'Thumbnail Generated Successfully',
             thumbnail: {
                 _id: newThumbnail._id,
@@ -111,9 +128,12 @@ export const generateThumbnail = async (req: AuthRequest, res: Response) => {
         });
 
     } catch (error: any) {
-        console.error("GENERATE ERROR:", error.message);
+        console.error('GENERATE ERROR:', error.message);
         if (!res.headersSent) {
-            return res.status(500).json({ message: "Generation failed", error: error.message });
+            return res.status(500).json({
+                success: false,
+                message: 'Image generation failed, please try again',
+            });
         }
     }
 }
